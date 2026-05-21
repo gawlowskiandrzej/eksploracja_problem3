@@ -199,7 +199,7 @@ def train_model(num_labels, train_data, val_data):
     trainer = codebert_base.train(
         train_dataset,
         val_dataset,
-        output_dir="/kaggle/working/",
+        output_dir="./working/",
         num_epochs=1,
         batch_size=16,
         learning_rate=2e-5
@@ -208,7 +208,7 @@ def train_model(num_labels, train_data, val_data):
 
 def test_model(test_data, val_data, trainer= None):
     code_bert = CodeBert()
-    code_bert.load_model("F:/kaggle/working/final_model")
+    code_bert.load_model("./working/final_model")
     val_dataset = code_bert.prepare_dataset(val_data)
     test_dataset = code_bert.prepare_dataset(test_data)
     data_collator = DataCollatorWithPadding(tokenizer=code_bert.tokenizer)

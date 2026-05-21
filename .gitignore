@@ -1,2 +1,4 @@
 .venv/
 src/__pycache__/
+tokenized_train_dataset
+tokenized_val_dataset
