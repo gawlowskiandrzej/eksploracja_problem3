@@ -153,7 +153,7 @@ class CodeBert:
             learning_rate=learning_rate,
             lr_scheduler_type="linear",
             save_total_limit=2,
-            report_to="wandb",
+            report_to="none",
             run_name="codebert_2e-5"
         )
         data_collator = DataCollatorWithPadding(tokenizer=self.tokenizer)
@@ -206,18 +206,19 @@ def train_model(num_labels, train_data, val_data):
     )
     return trainer
 
-def test_model(trainer, test_data, val_data):
+def test_model(test_data, val_data, trainer= None):
     code_bert = CodeBert()
-    code_bert.load_model("/kaggle/input/codebert-finetuned-epoch1/transformers/default/1/checkpoint-7500")
+    code_bert.load_model("F:/kaggle/working/final_model")
     val_dataset = code_bert.prepare_dataset(val_data)
     test_dataset = code_bert.prepare_dataset(test_data)
     data_collator = DataCollatorWithPadding(tokenizer=code_bert.tokenizer)
 
-    trainer = Trainer(
-        model=code_bert.model,
-        data_collator=data_collator,
-        tokenizer=code_bert.tokenizer,
-        compute_metrics=code_bert.compute_metrics
+    if (trainer is None):
+        trainer = Trainer(
+            model=code_bert.model,
+            data_collator=data_collator,
+            processing_class=code_bert.tokenizer,
+            compute_metrics=code_bert.compute_metrics
     )
     print("Evaluating on evaluation set...")
     predictions = trainer.predict(val_dataset)
@@ -240,9 +241,6 @@ def test_model(trainer, test_data, val_data):
 def create_model():
     datasets = read_datasets()
     train_data, val_data, test_data = datasets
-    train_data = train_data.sample(n=5000, random_state=42).reset_index(drop=True)
-    val_data = val_data.sample(n=5000, random_state=42).reset_index(drop=True)
-    #test_data = test_data.sample(n=5000, random_state=42).reset_index(drop=True)
     print(f"Loaded {len(train_data)} training samples")
     print(f"Loaded {len(val_data)} validation samples")
     print(f"Loaded {len(test_data)} testing samples")
@@ -257,7 +255,7 @@ def create_model():
         print("Device name:", torch.cuda.get_device_name(0))
     print("Starting model training...")
     trainer = train_model(num_labels, train_data, val_data)
-    #print(trainer)
+    test_model(test_data, val_data, trainer)
 
 if __name__ == "__main__":
     create_model()
