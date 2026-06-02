@@ -19,7 +19,7 @@ from transformers import (
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report
 import config
 
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+# os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 os.environ["WANDB_DISABLED"] = "true"
 
 def read_datasets():
@@ -30,7 +30,7 @@ def read_datasets():
     return train_dataset, val_dataset, test_dataset
 
 class CodeBert:
-    def __init__(self, task_subset='A', max_length=512, model_name="microsoft/codebert-base", num_labels=2):
+    def __init__(self, task_subset='A', max_length=256, model_name="microsoft/codebert-base", num_labels=2):
         self.task_subset = task_subset
         self.max_length = max_length
         self.model_name = model_name
@@ -44,7 +44,8 @@ class CodeBert:
         self.model = RobertaForSequenceClassification.from_pretrained(
             self.model_name,
             num_labels=self.num_labels,
-            problem_type="single_label_classification"
+            problem_type="single_label_classification",
+            use_safetensors=True
         )
         
         self.tokenizer = RobertaTokenizer.from_pretrained(self.model_name)
@@ -66,7 +67,8 @@ class CodeBert:
         self.model = RobertaForSequenceClassification.from_pretrained(
             model_dir,
             num_labels=self.num_labels,
-            problem_type="single_label_classification"
+            problem_type="single_label_classification",
+            use_safetensors=True
         )
 
         self.tokenizer = RobertaTokenizer.from_pretrained(model_dir)
@@ -78,7 +80,7 @@ class CodeBert:
         return self.tokenizer(
             examples['code'],
             truncation=True,
-            padding=True, 
+            padding=False, 
             max_length=self.max_length)
 
     def prepare_dataset(self, df):
@@ -94,7 +96,7 @@ class CodeBert:
 
         return dataset
     
-    def prepare_datasetv1(self, train_df, val_df, num_proc=1):
+    def prepare_datasetv1(self, train_df, val_df, num_proc=4):
         print("Preparing dataset for training...")
         train_dataset = Dataset.from_pandas(train_df[['code', 'label']])
         val_dataset = Dataset.from_pandas(val_df[['code', 'label']])
@@ -138,14 +140,14 @@ class CodeBert:
             num_train_epochs=num_epochs,
             per_device_train_batch_size=batch_size,
             per_device_eval_batch_size=batch_size,
+            dataloader_num_workers=4,
             warmup_steps=500,
             weight_decay=0.01,
             # logging_dir='./logs',
             logging_steps=500,
-            eval_strategy="steps",
-            eval_steps=500,
-            save_strategy="steps",
-            save_steps=500,
+            fp16=True,
+            eval_strategy="epoch",
+            save_strategy="epoch",
             load_best_model_at_end=True,
             metric_for_best_model="f1",
             greater_is_better=True,
@@ -190,52 +192,43 @@ class CodeBert:
         return predictions
 
 def train_model(num_labels, train_data, val_data):
-    codebert_base = CodeBert(max_length=512, model_name="microsoft/codebert-base", num_labels=num_labels)
+    codebert_base = CodeBert(max_length=256, model_name="microsoft/codebert-base", num_labels=num_labels)
     codebert_base.init_model_and_tokenizer()
     train_dataset, val_dataset = codebert_base.prepare_datasetv1(train_data, val_data)
-    train_dataset.save_to_disk("tokenized_train_dataset")
-    val_dataset.save_to_disk("tokenized_val_dataset")
+    # train_dataset.save_to_disk("tokenized_train_dataset")
+    # val_dataset.save_to_disk("tokenized_val_dataset")
 
     trainer = codebert_base.train(
         train_dataset,
         val_dataset,
-        output_dir="/kaggle/working/",
+        output_dir="./working/",
         num_epochs=1,
-        batch_size=16,
+        batch_size=32,
         learning_rate=2e-5
     )
     return trainer
 
-def test_model(test_data, val_data, trainer= None):
+def test_model(val_data, trainer=None):
     code_bert = CodeBert()
-    code_bert.load_model("F:/kaggle/working/final_model")
+    code_bert.load_model("./working/final_model")
     val_dataset = code_bert.prepare_dataset(val_data)
-    test_dataset = code_bert.prepare_dataset(test_data)
     data_collator = DataCollatorWithPadding(tokenizer=code_bert.tokenizer)
 
-    if (trainer is None):
+    if trainer is None:
         trainer = Trainer(
             model=code_bert.model,
             data_collator=data_collator,
             processing_class=code_bert.tokenizer,
             compute_metrics=code_bert.compute_metrics
-    )
-    print("Evaluating on evaluation set...")
+        )
+        
+    print("Evaluating strictly on validation set...")
     predictions = trainer.predict(val_dataset)
 
     y_pred = np.argmax(predictions.predictions, axis=1)
     y_true = predictions.label_ids
 
-    print("Classification Report:")
-    print(classification_report(y_true, y_pred, target_names=['human', 'machine'], digits=5))
-
-    print("Evaluating on test set...")
-    predictions = trainer.predict(test_dataset)
-
-    y_pred = np.argmax(predictions.predictions, axis=1)
-    y_true = predictions.label_ids
-
-    print("Classification Report:")
+    print("Classification Report (Validation Set):")
     print(classification_report(y_true, y_pred, target_names=['human', 'machine'], digits=5))
 
 def create_model():
@@ -255,7 +248,7 @@ def create_model():
         print("Device name:", torch.cuda.get_device_name(0))
     print("Starting model training...")
     trainer = train_model(num_labels, train_data, val_data)
-    test_model(test_data, val_data, trainer)
+    test_model(val_data, trainer)
 
 if __name__ == "__main__":
     create_model()
